@@ -54,3 +54,8 @@ docker compose up -d
 * [Clickhouse Kafka Engine Virtual Columns](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka#virtual-columns)
 * Older version using QuestDB: https://github.com/kzk2000/deephaven-questdb
 * 
+
+
+eval "$(ssh-agent -s)"
+ssh-add -l
+ssh-add ~/.ssh/id_ed25519_alex
