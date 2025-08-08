@@ -12,7 +12,9 @@ This repo shows how to
 ## General Setup 
 Everything should "just work", simply run this and wait until all 5 containers start up:<br>
 ```
+docker compose down
 docker compose build --no-cache
+docker compose up
 docker compose up -d  
 ```
 * Deephaven UI is running at http://localhost:10000/ide/
@@ -53,4 +55,3 @@ docker compose up -d
 * [ClickHouse Server in 1 minute with Docker](https://dev.to/titronium/clickhouse-server-in-1-minute-with-docker-4gf2)
 * [Clickhouse Kafka Engine Virtual Columns](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka#virtual-columns)
 * Older version using QuestDB: https://github.com/kzk2000/deephaven-questdb
-* 

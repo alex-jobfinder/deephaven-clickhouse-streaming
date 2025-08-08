@@ -27,7 +27,7 @@ services:
 
   console:
     container_name: redpanda-console
-    image: docker.redpanda.com/vectorized/console:v2.4.3
+    image: docker.redpanda.com/redpandadata/console:v2.4.3
     networks:
       - ch_ntw
     entrypoint: /bin/sh
@@ -42,7 +42,7 @@ services:
             enabled: true
             urls: ["http://redpanda:9644"]
     ports:
-      - 8080:8080
+      - 8081:8080
     depends_on:
       - redpanda
 
