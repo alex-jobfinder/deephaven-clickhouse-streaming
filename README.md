@@ -53,3 +53,4 @@ docker compose up -d
 * [ClickHouse Server in 1 minute with Docker](https://dev.to/titronium/clickhouse-server-in-1-minute-with-docker-4gf2)
 * [Clickhouse Kafka Engine Virtual Columns](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka#virtual-columns)
 * Older version using QuestDB: https://github.com/kzk2000/deephaven-questdb
+* 
