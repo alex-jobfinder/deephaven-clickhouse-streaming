@@ -18,5 +18,5 @@ zzz_private
 *.log
 trials_*.py
 
-
+docker/clickhouse/example_data/*
 

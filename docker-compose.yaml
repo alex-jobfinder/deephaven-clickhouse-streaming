@@ -5,25 +5,28 @@ services:
     command:
       - redpanda
       - start
-      - --smp 1
-      - --memory 1G
-# this is no longer needed as we provide the configurations via ./docker/redpanda/redpanda.yaml
-#      - --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092
-#      - --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092
+      - --smp 4
+      - --memory 4G
+      - --reserve-memory 4G
     ports:
       - "9092:9092"
       - "29092:29092"
     volumes:
-     # these mounts seem to be required on MacOS, not needed for Linux
-     # - ./data/redpanda/data:/var/lib/redpanda/data
-     # - ./data/redpanda/logs:/var/lib/redpanda/logs
       - ./docker/redpanda/redpanda.yaml:/etc/redpanda/redpanda.yaml:ro
+      - ./logs/redpanda:/var/lib/redpanda/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "localhost:9644/v1/status/ready"]
       start_period: 5s
       interval: 3s
     networks:
       - ch_ntw
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "redpanda"
+        env: "LOG_LEVEL=info"
 
   console:
     container_name: redpanda-console
@@ -45,6 +48,12 @@ services:
       - 8081:8080
     depends_on:
       - redpanda
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "redpanda-console"
 
   deephaven:
     container_name: deephaven
@@ -72,28 +81,47 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: password
       CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: true
+      CLICKHOUSE_LOG_LEVEL: INFORMATION
     ports:
       - "8123:8123"
     volumes:
       - ./data/clickhouse:/var/lib/clickhouse
       - ./docker/clickhouse/sql/init_trades.sql:/docker-entrypoint-initdb.d/init_trades.sql:ro
       - ./docker/clickhouse/sql/init_orderbooks.sql:/docker-entrypoint-initdb.d/init_orderbooks.sql:ro
+      - ./logs/clickhouse:/var/log/clickhouse-server
     healthcheck:
       test: ["CMD", "wget", "--tries=3", "--spider", "-q", "localhost:8123/ping"]
       start_period: 10s
       interval: 3s
     networks:
-        - ch_ntw
+      - ch_ntw
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+        labels: "clickhouse"
+        env: "CLICKHOUSE_LOG_LEVEL=INFORMATION"
 
   cryptofeed:
     container_name: cryptofeed
     build:
       context: docker/cryptofeed
+    environment:
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: INFO
     depends_on:
       redpanda:
         condition: service_healthy
     networks:
       - ch_ntw
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "cryptofeed"
+        env: "LOG_LEVEL=INFO"
 
 networks:
   ch_ntw:

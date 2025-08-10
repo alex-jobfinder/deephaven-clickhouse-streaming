@@ -7,6 +7,11 @@ from deephaven.plot import PlotStyle, Color
 from deephaven.plot.figure import Figure
 
 
+#  Configuration variables for symbol filtering
+BTC_SYMBOLS = ["BTC-USD", "BTC"]  # Add more BTC symbols as needed
+DEFAULT_SYMBOL_FILTER = " OR ".join([f"symbol == `{sym}`" for sym in BTC_SYMBOLS])
+
+
 def create_l2_table(orderbooks_sampled):
     """Wrapper func to not clutter namespace with helper tables"""
 
@@ -125,7 +130,8 @@ trades_and_quotes = (
     .sort(["ts"])
 )
 
-trades_and_quotes_one_symbol = trades_and_quotes.where(["symbol == `BTC-USD`"])
+trades_and_quotes_one_symbol = trades_and_quotes.where([DEFAULT_SYMBOL_FILTER])
+
 
 plot_trades_and_quotes = (
     Figure()
@@ -304,7 +310,7 @@ l2_book_curated = merge([quotes_l2_bid_curated, quotes_l2_ask_curated]).sort([
     "order_size",
 ])
 l2_book_curated_one_symbol = (
-    l2_book_curated.where(["symbol == `BTC-USD`"])
+    l2_book_curated.where([DEFAULT_SYMBOL_FILTER])
     .where("abs(order_size) == 100000")
     .tail_by(30, ["side"])
 )
@@ -419,7 +425,7 @@ meta = quotes_l2_curated.meta_table
 # Experimental (WIP): Plot L2 orderbook for BTC-USD
 
 l2_book = create_l2_table(orderbooks_sampled)
-l2_book_one_symbol = l2_book.where(["symbol ==`BTC-USD`"]).tail(1000)
+l2_book_one_symbol = l2_book.where([DEFAULT_SYMBOL_FILTER]).tail(1000)
 
 plot_l2 = (
     Figure()

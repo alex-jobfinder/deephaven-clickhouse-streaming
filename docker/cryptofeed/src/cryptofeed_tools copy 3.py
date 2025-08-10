@@ -11,13 +11,7 @@ from aiokafka.errors import RequestTimedOutError, KafkaConnectionError, NodeNotR
 
 # Enhanced logging setup
 def setup_logging(service_name: str, log_level: str = "INFO"):
-    """Setup logging for the service"""
-    import os
-    
-    # Create logs directory if it doesn't exist
-    log_dir = '/cryptofeed/logs'
-    os.makedirs(log_dir, exist_ok=True)
-    
+    """Setup comprehensive logging for the service"""
     # Create formatter
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,12 +23,12 @@ def setup_logging(service_name: str, log_level: str = "INFO"):
     console_handler.setFormatter(formatter)
     
     # File handler for errors
-    error_handler = logging.FileHandler(f'{log_dir}/{service_name}_errors.log')
+    error_handler = logging.FileHandler(f'/cryptofeed/logs/{service_name}_errors.log')
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(formatter)
     
     # File handler for all logs
-    file_handler = logging.FileHandler(f'{log_dir}/{service_name}_all.log')
+    file_handler = logging.FileHandler(f'/cryptofeed/logs/{service_name}_all.log')
     file_handler.setFormatter(formatter)
     
     # Setup logger
