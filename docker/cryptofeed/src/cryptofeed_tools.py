@@ -32,17 +32,23 @@ class KafkaCallback:
         self.numeric_type = numeric_type
         self.none_to = none_to
 
-    async def __call__(self, dtype, receipt_timestamp: float):
-        print(f"DEBUG: KafkaCallback.__call__ received dtype type: {type(dtype)}")
+    async def __call__(self, dtype, receipt_timestamp: float, **kwargs):  # <-- accept **kwargs
+        print(f"DEBUG: KafkaCallback.__call__ dtype={type(dtype)} receipt_ts={receipt_timestamp} kwargs={list(kwargs.keys())}")
         if isinstance(dtype, dict):
-            data = dtype
+            data = dict(dtype)
             print(f"DEBUG: Data is dict with keys: {list(data.keys())}")
         else:
             print(f"DEBUG: Converting dtype to dict, dtype type: {type(dtype)}")
             data = dtype.to_dict(numeric_type=self.numeric_type, none_to=self.none_to)
-            if not dtype.timestamp:
+            # Prefer the explicit 'timestamp' from kwargs if provided
+            if 'timestamp' in kwargs:
+                data['timestamp'] = kwargs['timestamp']
+            elif not getattr(dtype, 'timestamp', None):
                 data['timestamp'] = receipt_timestamp
             data['receipt_timestamp'] = receipt_timestamp
+            # Optionally carry through raw for debugging
+            if 'raw' in kwargs:
+                data['raw'] = kwargs['raw']
             print(f"DEBUG: Converted data keys: {list(data.keys())}")
         await self.write(data)
 
@@ -85,23 +91,50 @@ class ClickHouseBookKafka(KafkaCallback):
         try:
             print(f"DEBUG: ClickHouseBookKafka.write() received data keys: {list(data.keys())}")
             if 'book' in data:
-                print(f"DEBUG: Book structure - book keys: {list(data['book'].keys()) if isinstance(data['book'], dict) else 'Not a dict'}")
-                if 'bid' in data['book']:
-                    print(f"DEBUG: Bid structure - first few items: {list(data['book']['bid'].items())[:3]}")
-                if 'ask' in data['book']:
-                    print(f"DEBUG: Ask structure - first few items: {list(data['book']['ask'].items())[:3]}")
-            
+                bk = data['book']
+                print(f"DEBUG: Book structure keys: {list(bk.keys()) if isinstance(bk, dict) else bk}")
+                if isinstance(bk, dict):
+                    if 'bid' in bk: print(f"DEBUG: Bid first few: {list(bk['bid'].items())[:3]}")
+                    if 'ask' in bk: print(f"DEBUG: Ask first few: {list(bk['ask'].items())[:3]}")
+
             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
+            from collections import OrderedDict
             data['bid'] = OrderedDict(sorted(data['book'].pop('bid').items(), reverse=True))
             data['ask'] = OrderedDict(sorted(data['book'].pop('ask').items()))
             del data['book']
-            del data['delta']
-            await self.producer.send_and_wait(self.topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS))  # orjson uses UTF-8 encoding by default
+            data.pop('delta', None)  # <-- avoid KeyError if not present
+            await self.producer.send_and_wait(self.topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS))
         except Exception as e:
             print(f"WARNING: ClickHouseBookKafka.write() failed with error: {e}")
             print(f"DEBUG: Data that caused failure: {data}")
             pass
+
+# class ClickHouseBookKafka(KafkaCallback):
+#     default_topic = 'orderbooks'
+
+#     async def write(self, data: dict):
+#         await self._KafkaCallback__connect()
+#         try:
+#             print(f"DEBUG: ClickHouseBookKafka.write() received data keys: {list(data.keys())}")
+#             if 'book' in data:
+#                 print(f"DEBUG: Book structure - book keys: {list(data['book'].keys()) if isinstance(data['book'], dict) else 'Not a dict'}")
+#                 if 'bid' in data['book']:
+#                     print(f"DEBUG: Bid structure - first few items: {list(data['book']['bid'].items())[:3]}")
+#                 if 'ask' in data['book']:
+#                     print(f"DEBUG: Ask structure - first few items: {list(data['book']['ask'].items())[:3]}")
+            
+#             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
+#             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
+#             data['bid'] = OrderedDict(sorted(data['book'].pop('bid').items(), reverse=True))
+#             data['ask'] = OrderedDict(sorted(data['book'].pop('ask').items()))
+#             del data['book']
+#             del data['delta']
+#             await self.producer.send_and_wait(self.topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS))  # orjson uses UTF-8 encoding by default
+#         except Exception as e:
+#             print(f"WARNING: ClickHouseBookKafka.write() failed with error: {e}")
+#             print(f"DEBUG: Data that caused failure: {data}")
+#             pass
         
 
 

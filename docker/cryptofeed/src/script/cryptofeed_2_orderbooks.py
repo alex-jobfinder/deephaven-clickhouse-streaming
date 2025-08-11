@@ -24,24 +24,14 @@ def main():
     f = FeedHandler()
     # f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     # f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
-    # f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
-    # f.add_feed(HyperLiquid(
-    #     subscription={
-    #         L2_BOOK: cft.SYMBOLS_HYPERLIQUID
-    #     },
-    #     callbacks=callbacks))
-    
-        # f.add_feed(HyperLiquid(
-
-        #         channels=[L2_BOOK],
-
-        #         symbols=cft.SYMBOLS_HYPERLIQUID,
-
-        #         callbacks=callbacks))
+    # f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))  
     f.add_feed(HyperLiquid(
-            subscription={L2_BOOK: cft.SYMBOLS_HYPERLIQUID},
-            callbacks={L2_BOOK: [ch_book_kafka, cft.my_print]}
-    ))        
+        subscription={
+            L2_BOOK: cft.SYMBOLS_HYPERLIQUID
+        },
+        callbacks={
+            L2_BOOK: [ch_book_kafka, cft.my_print]
+        }))          
     f.run()
 
 

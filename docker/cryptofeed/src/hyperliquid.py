@@ -199,6 +199,7 @@ class HyperLiquid(Feed):
             asks = {Decimal(level["px"]): Decimal(level["sz"]) for level in asks_raw}
 
             ob = self._l2_book[pair]
+            # Populate using standard cryptofeed OrderBook attributes
             ob.book.bids = bids
             ob.book.asks = asks
             ob.timestamp = self.timestamp_normalize(time_ms)
