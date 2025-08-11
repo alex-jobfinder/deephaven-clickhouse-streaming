@@ -7,6 +7,9 @@ RUN pip3 install -r ./requirements.txt
 
 # local hack to avoid auth requirements by using undocuments CB Exchange end points
 COPY src/coinbase.py /usr/local/lib/python3.10/site-packages/cryptofeed/exchanges/coinbase.py
+COPY src/hyperliquid.py /usr/local/lib/python3.10/site-packages/cryptofeed/exchanges/hyperliquid.py
+COPY src/defines.py /usr/local/lib/python3.10/site-packages/cryptofeed/defines.py
+COPY src/exchanges/__init__.py /usr/local/lib/python3.10/site-packages/cryptofeed/exchanges/__init__.py
 
 # copy latest project changes
 COPY setup.py /cryptofeed/setup.py

@@ -12,14 +12,21 @@ This repo shows how to
 ## General Setup 
 Everything should "just work", simply run this and wait until all 5 containers start up:<br>
 ```
+docker compose down
 docker compose build --no-cache
+docker compose up
 docker compose up -d  
+
+
+docker compose down 
+docker compose build --no-cache
+docker compose up
 ```
 * Deephaven UI is running at http://localhost:10000/ide/
 * ClickHouse Play is running at http://localhost:8123/play
   * CLICKHOUSE_USER: default
   * CLICKHOUSE_PASSWORD: password
-* Redpanda Console is running at http://localhost:8080/overview
+* Redpanda Console is running at http://localhost:8081/overview
 * Data is stored locally under the `/data/[clickhouse|deephaven|redpanda]` folders which are mounted into the docker images
 
 
