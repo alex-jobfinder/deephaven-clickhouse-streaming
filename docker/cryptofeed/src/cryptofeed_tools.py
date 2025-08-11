@@ -5,6 +5,9 @@ import orjson
 from aiokafka import AIOKafkaProducer
 
 SYMBOLS = ['BTC-USD', 'ETH-USD', 'AVAX-USD', 'SOL-USD']
+SYMBOLS_HYPERLIQUID = ["ADA", "APT", "ATOM", "AVAX", "BNB", "BTC", "DOGE", "DOT", "ETH", "FARTCOIN", "HYPE", "NEAR", "SOL", "SUI", "TIA", "XRP"]
+SYMBOLS = ['BTC-USD']
+SYMBOLS_HYPERLIQUID = ["BTC"]
 
 
 async def my_print(data, _receipt_time):

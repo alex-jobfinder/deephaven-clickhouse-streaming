@@ -1,6 +1,6 @@
 from cryptofeed import FeedHandler
 from cryptofeed.defines import L2_BOOK
-from cryptofeed.exchanges import Coinbase, Kraken, Bitstamp
+from cryptofeed.exchanges import Coinbase, Kraken, Bitstamp, HyperLiquid
 
 import src.cryptofeed_tools as cft
 import os
@@ -24,6 +24,11 @@ def main():
     f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    f.add_feed(HyperLiquid(
+        subscription={
+            L2_BOOK: cft.SYMBOLS_HYPERLIQUID
+        },
+        callbacks=callbacks))    
     f.run()
 
 

@@ -125,7 +125,7 @@ trades_and_quotes = (
     .sort(["ts"])
 )
 
-trades_and_quotes_one_symbol = trades_and_quotes.where(["symbol == `BTC`"])
+trades_and_quotes_one_symbol = trades_and_quotes.where(["symbol == `BTC-USD`"])
 
 plot_trades_and_quotes = (
     Figure()
@@ -304,7 +304,7 @@ l2_book_curated = merge([quotes_l2_bid_curated, quotes_l2_ask_curated]).sort([
     "order_size",
 ])
 l2_book_curated_one_symbol = (
-    l2_book_curated.where(["symbol == `BTC`"])
+    l2_book_curated.where(["symbol == `BTC-USD`"])
     .where("abs(order_size) == 100000")
     .tail_by(30, ["side"])
 )
@@ -312,7 +312,7 @@ l2_book_curated_one_symbol = (
 plot_l2_curated = (
     Figure()
     .axes(plot_style=PlotStyle.STEP)
-    .chart_title(title="BTC: Slippage for $100k")
+    .chart_title(title="BTC-USD: Slippage for $100k")
     .plot_xy(
         series_name="100k",
         t=l2_book_curated_one_symbol,
@@ -332,7 +332,7 @@ fig = dx.scatter(
     by=["side"],
     color_discrete_sequence=["red", "lightgreen"],
     size_sequence=10,
-    title="BTC: Slippage for $100k",
+    title="BTC-USD: Slippage for $100k",
     xaxis_titles="",
     yaxis_titles="Slippage (bps)",
 )
@@ -342,7 +342,7 @@ fig = dx.scatter(
 
 # plot_l2_curated = Figure() \
 #     .axes(plot_style=PlotStyle.STACKED_BAR) \
-#     .chart_title(title="L2 quotes for BTC") \
+#     .chart_title(title="L2 quotes for BTC-USD") \
 #     .plot_cat(series_name="BID", t=l2_book_curated_one_symbol.where(["abs(order_size) == 100000", "side == `bid`"]).tail(10), category="ts_bin", y="slippage") \
 #     .plot_cat(series_name="ASK", t=l2_book_curated_one_symbol.where(["abs(order_size) == 100000", "side == `ask`"]).tail(10), category="ts_bin", y="slippage") \
 #     .show()
@@ -416,14 +416,14 @@ meta = quotes_l2_curated.meta_table
 
 
 ##############################################################################################################################
-# Experimental (WIP): Plot L2 orderbook for BTC
+# Experimental (WIP): Plot L2 orderbook for BTC-USD
 
 l2_book = create_l2_table(orderbooks_sampled)
-l2_book_one_symbol = l2_book.where(["symbol ==`BTC`"]).tail(1000)
+l2_book_one_symbol = l2_book.where(["symbol ==`BTC-USD`"]).tail(1000)
 
 plot_l2 = (
     Figure()
-    .chart_title(title="L2 quotes for BTC")
+    .chart_title(title="L2 quotes for BTC-USD")
     .plot_xy(
         series_name="L2 book", t=l2_book_one_symbol, x="ts_bin", y="price", by=["level"]
     )

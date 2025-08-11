@@ -183,7 +183,7 @@ orderbooks_curated = get_orderbooks_curated()
 # plot a few things
 
 orderbook_one_symbol = (
-    orderbooks_curated.where(["symbol == `BTC`"]).tail(100).sort(["ts_bin"])
+    orderbooks_curated.where(["symbol == `BTC-USD`"]).tail(100).sort(["ts_bin"])
 )
 
 slippage_100k = dx.line(
@@ -194,7 +194,7 @@ slippage_100k = dx.line(
     color_discrete_map={"COINBASE": "green"},
     line_shape="hv",
     size_sequence=8,
-    title="BTC: Slippage for $100k",
+    title="BTC-USD: Slippage for $100k",
     xaxis_titles="",
     yaxis_titles="Slippage (bps)",
     by=[
@@ -209,7 +209,7 @@ spreads_100k = dx.line(
     x="ts_bin",
     y=["spread_100k_bps"],
     # color_discrete_sequence=["red", "lightgreen", "lightblue"],
-    color_discrete_map={("COINBASE", "BTC"): "green"},
+    color_discrete_map={("COINBASE", "BTC-USD"): "green"},
     line_shape="hv",
     size_sequence=8,
     title="Round-trip cost for $100k",
