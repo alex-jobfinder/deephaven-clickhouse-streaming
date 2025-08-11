@@ -42,15 +42,25 @@ class HyperLiquid(Feed):
             return Symbols.get(cls.id)[0]
 
         try:
-            # Use perps metadata (universe names like 'BTC', 'ETH', ...)
-            response = cls.http_sync.write(
+            # Prefer richer metadata first; fall back to allMids
+            response_meta = cls.http_sync.write(
                 cls.symbol_endpoint,
                 data={"type": "meta"},
                 is_data_json=True,
                 json=True
             )
 
-            syms, info = cls._parse_symbol_data(response)
+            syms, info = cls._parse_symbol_data(response_meta)
+            if not syms:
+                LOG.debug("HyperLiquid meta returned no symbols; falling back to allMids")
+                response_mids = cls.http_sync.write(
+                    cls.symbol_endpoint,
+                    data={"type": "allMids"},
+                    is_data_json=True,
+                    json=True
+                )
+                syms, info = cls._parse_symbol_data(response_mids)
+
             LOG.debug(f"HyperLiquid symbol mapping result: {syms}")
             Symbols.set(cls.id, syms, info)
             return syms
@@ -67,6 +77,7 @@ class HyperLiquid(Feed):
             LOG.error("HyperLiquid info endpoint returned no data or invalid response")
             return symbols_map, info
 
+        # Allow string payloads
         if isinstance(data, str):
             try:
                 data = json.loads(data)
@@ -74,21 +85,39 @@ class HyperLiquid(Feed):
                 LOG.error(f"Failed to parse JSON from HyperLiquid response: {e}")
                 return symbols_map, info
 
-        # Expect perps meta shape: { "universe": [ { "name": "BTC", "isDelisted": false }, ... ] }
-        if isinstance(data, dict) and 'universe' in data and isinstance(data['universe'], list):
-            for entry in data['universe']:
-                if not isinstance(entry, dict):
-                    continue
-                name = entry.get('name')
-                if not name or not isinstance(name, str):
-                    continue
-                # Do not filter out delisted entries; include the full universe as requested
-                # Mapping: normalized symbol is same as exchange symbol for perps, e.g. 'BTC'
-                symbols_map[name] = name
-                # info['instrument_type'][name] = 'perp'
+        extracted: List[str] = []
+
+        if isinstance(data, dict):
+            # allMids-style: keys are coin tickers
+            for key in data.keys():
+                if isinstance(key, str) and not key.startswith('@') and key.isupper() and 2 <= len(key) <= 20:
+                    extracted.append(key)
+
+            # meta-style: scan list fields for uppercase strings
+            for value in data.values():
+                if isinstance(value, list):
+                    for entry in value:
+                        if isinstance(entry, str) and entry.isupper() and 2 <= len(entry) <= 20:
+                            extracted.append(entry)
+        elif isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, str) and entry.isupper() and 2 <= len(entry) <= 20:
+                    extracted.append(entry)
+        else:
+            LOG.error("Unexpected format from HyperLiquid info endpoint (neither dict nor list)")
             return symbols_map, info
 
-        LOG.error("Unexpected format from HyperLiquid meta endpoint; could not find perps universe")
+        # De-duplicate preserving order
+        seen = set()
+        for sym in extracted:
+            if sym.startswith('@') or sym in seen:
+                continue
+            seen.add(sym)
+            symbols_map[sym] = sym
+            info['instrument_type'][sym] = 'perp'
+
+        if not symbols_map:
+            LOG.warning("HyperLiquid: No symbols extracted from info response. Sample: %s", str(data)[:512])
 
         return symbols_map, info
 

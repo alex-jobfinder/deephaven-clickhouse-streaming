@@ -19,7 +19,7 @@ docker compose up -d
 * ClickHouse Play is running at http://localhost:8123/play
   * CLICKHOUSE_USER: default
   * CLICKHOUSE_PASSWORD: password
-* Redpanda Console is running at http://localhost:8080/overview
+* Redpanda Console is running at http://localhost:8081/overview
 * Data is stored locally under the `/data/[clickhouse|deephaven|redpanda]` folders which are mounted into the docker images
 
 
@@ -53,3 +53,40 @@ docker compose up -d
 * [ClickHouse Server in 1 minute with Docker](https://dev.to/titronium/clickhouse-server-in-1-minute-with-docker-4gf2)
 * [Clickhouse Kafka Engine Virtual Columns](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka#virtual-columns)
 * Older version using QuestDB: https://github.com/kzk2000/deephaven-questdb
+
+
+
+curl -X POST https://api.hyperliquid.xyz/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "l2Book",
+    "coin": "BTC"
+  }'
+
+curl -X POST https://api.hyperliquid.xyz/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "l2Book",
+    "coin": "BTC",
+    "nSigFigs": 3
+  }'
+
+curl -X POST https://api.hyperliquid.xyz/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "l2Book",
+    "coin": "BTC-USD"
+  }'
+
+curl -X POST https://api.hyperliquid.xyz/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "l2Book",
+    "coin": "BTC-USDC"
+  }'
+
+curl -X POST https://api.hyperliquid.xyz/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "spotMeta"
+  }'
