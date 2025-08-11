@@ -1,4 +1,44 @@
-
+--
+-- Orderbook pipeline documentation
+--
+-- End-to-end flow
+--   1) Exchange websocket (e.g., HyperLiquid 'l2Book') is normalized by cryptofeed
+--      into a cryptofeed OrderBook with canonical book[BID]/book[ASK] levels.
+--   2) cryptofeed -> ClickHouseBookKafka transforms the OrderBook.to_dict() payload
+--      into JSON for Kafka topic 'orderbooks' with fields:
+--         {
+--           exchange: String,
+--           symbol: String,
+--           ts:      DateTime64(9) (derived from timestamp in ns),
+--           bid:     Map(String, Float64),  -- price->size (best bid first when read)
+--           ask:     Map(String, Float64)   -- price->size (best ask first when read)
+--         }
+--      Notes:
+--        - Price keys are emitted as JSON object keys; ClickHouse Map(String, Float64)
+--          reads them as strings (e.g., "121366.0": 11.41902).
+--        - The writer sorts bids descending and asks ascending prior to publish.
+--
+-- ClickHouse structures in this file
+--   - cryptofeed.orderbooks_queue (Kafka engine)
+--       Consumes JSONEachRow from topic 'orderbooks' and exposes it as a table for MVs.
+--
+--   - cryptofeed.orderbooks_1sec_mv (AggregatingMergeTree MV)
+--       Maintains the latest snapshot per (exchange, symbol, second) using argMax.
+--       Query this for low-granularity views or sparkline-style charts.
+--
+--   - cryptofeed.orderbooks (MergeTree)
+--       Stores ALL snapshots with a one-hour TTL. Adjust TTL to retain more history
+--       if needed (be mindful of volume).
+--
+-- Optional outbound section (commented out)
+--   - Demonstrates how to publish aggregated 1s snapshots back to a Kafka topic.
+--
+-- Troubleshooting
+--   - If orderbooks are not appearing, verify producer payload contains 'bid' and 'ask'
+--     at the top level (after ClickHouseBookKafka flattens 'book').
+--   - Ensure timestamps are numeric seconds in cryptofeed and converted to ns here.
+--   - Check ClickHouse logs for JSON parse warnings if Map keys are not strings.
+--
 -- uncomment these to start from scratch
 DROP TABLE IF EXISTS cryptofeed.orderbooks;
 DROP TABLE IF EXISTS cryptofeed.orderbooks_queue;
