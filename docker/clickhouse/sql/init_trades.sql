@@ -1,8 +1,8 @@
 
 -- uncomment these to start from scratch
---DROP TABLE cryptofeed.trades;
---DROP TABLE cryptofeed.trades_queue;
---DROP VIEW cryptofeed.trades_queue_mv;
+DROP TABLE cryptofeed.trades;
+DROP TABLE cryptofeed.trades_queue;
+DROP VIEW cryptofeed.trades_queue_mv;
 
 
 -- create database schema

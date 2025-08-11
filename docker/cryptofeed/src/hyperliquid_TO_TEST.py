@@ -9,7 +9,7 @@ from yapic import json
 
 from cryptofeed.symbols import Symbol, Symbols
 from cryptofeed.connection import AsyncConnection, WebsocketEndpoint
-from cryptofeed.defines import BUY, SELL, TRADES, L2_BOOK, HYPERLIQUID, CANDLES, BID, ASK
+from cryptofeed.defines import BUY, SELL, TRADES, L2_BOOK, HYPERLIQUID, CANDLES
 from cryptofeed.feed import Feed
 from cryptofeed.types import OrderBook, Trade, Candle
 
@@ -178,22 +178,12 @@ class HyperLiquid(Feed):
                 LOG.debug(f"HyperLiquid: TRADES callback executed for {std_symbol}")
 
         elif msg.get("channel") == "l2Book":
-            # WebSocket WsBook only: { coin: string, levels: [bids[], asks[]], time: number }
-            data = msg.get("data", {})
-            coin = data.get("coin")
-            levels = data.get("levels")
-            time_ms = data.get("time")
-
-            if not coin or not isinstance(levels, list) or len(levels) != 2 or time_ms is None:
-                LOG.warning(f"HyperLiquid: malformed l2Book message: {msg}")
-                return
-
-            pair = self.exchange_symbol_to_std_symbol(coin)
+            pair = self.exchange_symbol_to_std_symbol(msg["data"]["coin"])
             if pair not in self._l2_book:
                 self._l2_book[pair] = OrderBook(self.id, pair, max_depth=self.max_depth)
 
-            bids_raw = levels[0]
-            asks_raw = levels[1]
+            bids_raw = msg["data"]["levels"][0]
+            asks_raw = msg["data"]["levels"][1]
 
             bids = {Decimal(level["px"]): Decimal(level["sz"]) for level in bids_raw}
             asks = {Decimal(level["px"]): Decimal(level["sz"]) for level in asks_raw}
@@ -201,35 +191,12 @@ class HyperLiquid(Feed):
             ob = self._l2_book[pair]
             ob.book.bids = bids
             ob.book.asks = asks
-            ob.timestamp = self.timestamp_normalize(time_ms)
+            ob.timestamp = self.timestamp_normalize(msg["data"]["time"])
             ob.raw = msg
 
             await self.book_callback(L2_BOOK, ob, timestamp, timestamp=ob.timestamp, raw=msg)
 
         else:
             LOG.debug(f"HyperLiquid: Unhandled message type {msg.get('channel')}: {msg}")
-
-
-        # elif msg.get("channel") == "l2Book":
-        #     pair = self.exchange_symbol_to_std_symbol(msg["data"]["coin"])
-        #     if pair not in self._l2_book:
-        #         self._l2_book[pair] = OrderBook(self.id, pair, max_depth=self.max_depth)
-
-        #     bids_raw = msg["data"]["levels"][0]
-        #     asks_raw = msg["data"]["levels"][1]
-
-        #     bids = {Decimal(level["px"]): Decimal(level["sz"]) for level in bids_raw}
-        #     asks = {Decimal(level["px"]): Decimal(level["sz"]) for level in asks_raw}
-
-        #     ob = self._l2_book[pair]
-        #     ob.book.bids = bids
-        #     ob.book.asks = asks
-        #     ob.timestamp = self.timestamp_normalize(msg["data"]["time"])
-        #     ob.raw = msg
-
-        #     await self.book_callback(L2_BOOK, ob, timestamp, timestamp=ob.timestamp, raw=msg)
-
-        # else:
-        #     LOG.debug(f"HyperLiquid: Unhandled message type {msg.get('channel')}: {msg}")
 
 
