@@ -17,6 +17,63 @@ LOG = logging.getLogger('feedhandler')
 
 
 class HyperLiquid(Feed):
+    """
+    Data flow overview for L2 order books (WsBook):
+
+    1) Subscription
+       - FeedHandler constructs `subscription={L2_BOOK: ["BTC", ...]}`.
+       - `subscribe()` maps the standard channel `L2_BOOK` to the exchange channel
+         string `'l2Book'` and sends websocket messages of the form:
+            {
+              "method": "subscribe",
+              "subscription": { "type": "l2Book", "coin": "BTC" }
+            }
+
+    2) Inbound websocket messages
+       - The exchange pushes snapshots on each block (≥ 0.5s since last push):
+            {
+              "channel": "l2Book",
+              "data": {
+                "coin": "BTC",
+                "levels": [ [ {px, sz, n}, ... ], [ {px, sz, n}, ... ] ],
+                "time": <milliseconds>
+              }
+            }
+         where `levels[0]` are bids and `levels[1]` are asks. Prices (px) and sizes (sz)
+         are strings; we parse them as Decimal.
+
+    3) Normalization into cryptofeed OrderBook
+       - `message_handler()` handles `channel == "l2Book"`:
+           a. Map exchange symbol (e.g., 'BTC') to the standard symbol.
+           b. Convert `levels` into two dicts of Decimal price -> Decimal size.
+           c. Populate the OrderBook's internal structure using the canonical
+              keys `BID` and `ASK` (required by cryptofeed):
+                 book[BID] = { price: size, ... }
+                 book[ASK] = { price: size, ... }
+           d. Normalize the exchange timestamp `data.time` (ms) to seconds.
+
+    4) Emitting the callback
+       - Call `book_callback(L2_BOOK, order_book, ...)`. Cryptofeed's default
+         serialization (`to_dict`) produces a dict with a top-level `book` key:
+            {
+              'exchange': 'HYPERLIQUID',
+              'symbol': 'BTC',
+              'timestamp': <float seconds>,
+              'receipt_timestamp': <float seconds>,
+              'book': {
+                'bid': { Decimal(price): Decimal(size), ... },
+                'ask': { Decimal(price): Decimal(size), ... }
+              },
+              'delta': {...}
+            }
+         Downstream sinks (e.g., ClickHouseBookKafka) expect `book['bid']` and
+         `book['ask']` to exist; they will reorder these into arrays for storage.
+
+    Notes:
+      - This Feed implementation only handles the websocket WsBook path (no REST
+        snapshots). If you pass raw websocket messages directly to a Kafka writer,
+        you won't see a `book` key—only the normalized OrderBook via callback has it.
+    """
     id = HYPERLIQUID
     websocket_endpoints = [
         WebsocketEndpoint('wss://api.hyperliquid.xyz/ws', options={'compression': None}),
@@ -213,28 +270,4 @@ class HyperLiquid(Feed):
 
         else:
             LOG.debug(f"HyperLiquid: Unhandled message type {msg.get('channel')}: {msg}")
-
-
-        # elif msg.get("channel") == "l2Book":
-        #     pair = self.exchange_symbol_to_std_symbol(msg["data"]["coin"])
-        #     if pair not in self._l2_book:
-        #         self._l2_book[pair] = OrderBook(self.id, pair, max_depth=self.max_depth)
-
-        #     bids_raw = msg["data"]["levels"][0]
-        #     asks_raw = msg["data"]["levels"][1]
-
-        #     bids = {Decimal(level["px"]): Decimal(level["sz"]) for level in bids_raw}
-        #     asks = {Decimal(level["px"]): Decimal(level["sz"]) for level in asks_raw}
-
-        #     ob = self._l2_book[pair]
-        #     ob.book.bids = bids
-        #     ob.book.asks = asks
-        #     ob.timestamp = self.timestamp_normalize(msg["data"]["time"])
-        #     ob.raw = msg
-
-        #     await self.book_callback(L2_BOOK, ob, timestamp, timestamp=ob.timestamp, raw=msg)
-
-        # else:
-        #     LOG.debug(f"HyperLiquid: Unhandled message type {msg.get('channel')}: {msg}")
-
 
