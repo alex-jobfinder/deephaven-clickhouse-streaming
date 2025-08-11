@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+Fixed DeepHaven script for streaming HyperLiquid orderbooks
+All problematic trades-related code has been commented out
+"""
+
 import deephaven.dtypes as dht
 import deephaven.stream.kafka.consumer as ck
 import jpy
@@ -5,6 +11,11 @@ import orjson
 from deephaven import merge
 from deephaven.plot import PlotStyle, Color
 from deephaven.plot.figure import Figure
+
+
+#  Configuration variables for symbol filtering
+BTC_SYMBOLS = ["BTC-USD", "BTC"]  # Add more BTC symbols as needed
+DEFAULT_SYMBOL_FILTER = " | ".join([f"symbol == `{sym}`" for sym in BTC_SYMBOLS])
 
 
 def create_l2_table(orderbooks_sampled):
@@ -111,82 +122,86 @@ quotes_l1 = orderbooks_sampled.select([
     "spread_bps = spread / mid * 10000",
 ])
 
-# not-so-well documented trick to do as-of joins via partitions; must drop 'symbol' from one of them to avoid "conflicing columns error" for partitioned_transform() line
-trades_partitioned = trades.partition_by(["symbol"])
-quotes_partitioned = quotes_l1.partition_by(["symbol"]).transform(
-    lambda t: t.drop_columns(["symbol", "exchange"])
-)
-
-trades_and_quotes = (
-    trades_partitioned.partitioned_transform(
-        quotes_partitioned, lambda t, q: t.aj(q, on=["ts"])
-    )
-    .merge()
-    .sort(["ts"])
-)
-
-trades_and_quotes_one_symbol = trades_and_quotes.where(["symbol == `BTC`"])
-
-plot_trades_and_quotes = (
-    Figure()
-    .chart_title(title="Trades & Quotes")
-    .plot_xy(
-        series_name="TRD_BUY",
-        t=trades_and_quotes_one_symbol.where("side==`buy`"),
-        x="ts",
-        y="price",
-    )
-    .point(color=Color.of_name("LAWNGREEN"))
-    .plot_xy(
-        series_name="TRD_SELL",
-        t=trades_and_quotes_one_symbol.where("side==`sell`"),
-        x="ts",
-        y="price",
-    )
-    .point(color=Color.of_name("RED"))
-    .axes(plot_style=PlotStyle.SCATTER)
-    .twin()
-    .plot_xy(
-        series_name="BID (Kraken)", t=trades_and_quotes_one_symbol, x="ts", y="bid"
-    )
-    .plot_xy(
-        series_name="ASK (Kraken)", t=trades_and_quotes_one_symbol, x="ts", y="ask"
-    )
-    .axes(plot_style=PlotStyle.STEP)
-    .show()
-)
-
-plot_3subplots = (
-    Figure(rows=1, cols=3)
-    .new_chart(row=0, col=0)
-    .chart_title(title="Trades (Coinbase vs Kraken vs Bitstamp)")
-    .plot_xy(
-        series_name="Coinbase",
-        t=trades_and_quotes_one_symbol.where("exchange==`COINBASE`"),
-        x="ts",
-        y="price",
-    )
-    .axes(plot_style=PlotStyle.SCATTER)
-    .new_chart(row=0, col=1)
-    .chart_title(title="Trades (Kraken)")
-    .plot_xy(
-        series_name="Kraken",
-        t=trades_and_quotes_one_symbol.where("exchange==`KRAKEN`"),
-        x="ts",
-        y="price",
-    )
-    .axes(plot_style=PlotStyle.SCATTER)
-    .new_chart(row=0, col=2)
-    .chart_title(title="Trades (Bitstamp)")
-    .plot_xy(
-        series_name="Bitstamp",
-        t=trades_and_quotes_one_symbol.where("exchange==`BITSTAMP`"),
-        x="ts",
-        y="price",
-    )
-    .axes(plot_style=PlotStyle.SCATTER)
-    .show()
-)
+# NOTE: Trades-related code commented out - this script is for orderbooks only
+# The trades variable is not defined in this context
+# 
+# # not-so-well documented trick to do as-of joins via partitions; must drop 'symbol' from one of them to avoid "conflicing columns error" for partitioned_transform() line
+# trades_partitioned = trades.partition_by(["symbol"])  # trades variable not defined
+# quotes_partitioned = quotes_l1.partition_by(["symbol"]).transform(
+#     lambda t: t.drop_columns(["symbol", "exchange"])
+# )
+# 
+# trades_and_quotes = (
+#     trades_partitioned.partitioned_transform(
+#         quotes_partitioned, lambda t, q: t.aj(q, on=["ts"])
+#     )
+#     .merge()
+#     .sort(["ts"])
+# )
+# 
+# trades_and_quotes_one_symbol = trades_and_quotes.where([DEFAULT_SYMBOL_FILTER])
+# 
+# 
+# plot_trades_and_quotes = (
+#     Figure()
+#     .chart_title(title="Trades & Quotes")
+#     .plot_xy(
+#         series_name="TRD_BUY",
+#         t=trades_and_quotes_one_symbol.where("side==`buy`"),
+#         x="ts",
+#         y="price",
+#     )
+#     .point(color=Color.of_name("LAWNGREEN"))
+#     .plot_xy(
+#         series_name="TRD_SELL",
+#         t=trades_and_quotes_one_symbol.where("side==`sell`"),
+#         x="ts",
+#         y="price",
+#     )
+#     .point(color=Color.of_name("RED"))
+#     .axes(plot_style=PlotStyle.SCATTER)
+#     .twin()
+#     .plot_xy(
+#         series_name="BID (Kraken)", t=trades_and_quotes_one_symbol, x="ts", y="bid"
+#     )
+#     .plot_xy(
+#         series_name="ASK (Kraken)", t=trades_and_quotes_one_symbol, x="ts", y="ask"
+#     )
+#     .axes(plot_style=PlotStyle.SCATTER)
+#     .show()
+# )
+# 
+# plot_3subplots = (
+#     Figure(rows=1, cols=3)
+#     .new_chart(row=0, col=0)
+#     .chart_title(title="Trades (Coinbase vs Kraken vs Bitstamp)")
+#     .plot_xy(
+#         series_name="Coinbase",
+#         t=trades_and_quotes_one_symbol.where("exchange==`COINBASE`"),
+#         x="ts",
+#         y="price",
+#     )
+#     .axes(plot_style=PlotStyle.SCATTER)
+#     .new_chart(row=0, col=1)
+#     .chart_title(title="Trades (Kraken)")
+#     .plot_xy(
+#         series_name="Kraken",
+#         t=trades_and_quotes_one_symbol.where("exchange==`KRAKEN`"),
+#         x="ts",
+#         y="price",
+#     )
+#     .axes(plot_style=PlotStyle.SCATTER)
+#     .new_chart(row=0, col=2)
+#     .chart_title(title="Trades (Bitstamp)")
+#     .plot_xy(
+#         series_name="Bitstamp",
+#         t=trades_and_quotes_one_symbol.where("exchange==`BITSTAMP`"),
+#         x="ts",
+#         y="price",
+#     )
+#     .axes(plot_style=PlotStyle.SCATTER)
+#     .show()
+# )
 
 
 ##############################################################################################################################
@@ -214,7 +229,7 @@ class QuoteSizeFills:
 
 
 def parse_book_curated(book_str: str, max_levels: int = 200):
-    order_book = json.loads(book_str)
+    order_book = orjson.loads(book_str)
 
     vals = [
         (float(price_str), size, float(price_str) * size)
@@ -304,7 +319,7 @@ l2_book_curated = merge([quotes_l2_bid_curated, quotes_l2_ask_curated]).sort([
     "order_size",
 ])
 l2_book_curated_one_symbol = (
-    l2_book_curated.where(["symbol == `BTC`"])
+    l2_book_curated.where([DEFAULT_SYMBOL_FILTER])
     .where("abs(order_size) == 100000")
     .tail_by(30, ["side"])
 )
@@ -312,7 +327,7 @@ l2_book_curated_one_symbol = (
 plot_l2_curated = (
     Figure()
     .axes(plot_style=PlotStyle.STEP)
-    .chart_title(title="BTC: Slippage for $100k")
+    .chart_title(title="BTC-USD: Slippage for $100k")
     .plot_xy(
         series_name="100k",
         t=l2_book_curated_one_symbol,
@@ -332,7 +347,7 @@ fig = dx.scatter(
     by=["side"],
     color_discrete_sequence=["red", "lightgreen"],
     size_sequence=10,
-    title="BTC: Slippage for $100k",
+    title="BTC-USD: Slippage for $100k",
     xaxis_titles="",
     yaxis_titles="Slippage (bps)",
 )
@@ -342,7 +357,7 @@ fig = dx.scatter(
 
 # plot_l2_curated = Figure() \
 #     .axes(plot_style=PlotStyle.STACKED_BAR) \
-#     .chart_title(title="L2 quotes for BTC") \
+#     .chart_title(title="L2 quotes for BTC-USD") \
 #     .plot_cat(series_name="BID", t=l2_book_curated_one_symbol.where(["abs(order_size) == 100000", "side == `bid`"]).tail(10), category="ts_bin", y="slippage") \
 #     .plot_cat(series_name="ASK", t=l2_book_curated_one_symbol.where(["abs(order_size) == 100000", "side == `ask`"]).tail(10), category="ts_bin", y="slippage") \
 #     .show()
@@ -416,14 +431,14 @@ meta = quotes_l2_curated.meta_table
 
 
 ##############################################################################################################################
-# Experimental (WIP): Plot L2 orderbook for BTC
+# Experimental (WIP): Plot L2 orderbook for BTC-USD
 
 l2_book = create_l2_table(orderbooks_sampled)
-l2_book_one_symbol = l2_book.where(["symbol ==`BTC`"]).tail(1000)
+l2_book_one_symbol = l2_book.where([DEFAULT_SYMBOL_FILTER]).tail(1000)
 
 plot_l2 = (
     Figure()
-    .chart_title(title="L2 quotes for BTC")
+    .chart_title(title="L2 quotes for BTC-USD")
     .plot_xy(
         series_name="L2 book", t=l2_book_one_symbol, x="ts_bin", y="price", by=["level"]
     )

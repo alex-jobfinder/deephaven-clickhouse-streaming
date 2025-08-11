@@ -4,13 +4,7 @@ from cryptofeed.exchanges import Coinbase, Kraken, Bitstamp, HyperLiquid
 
 import src.cryptofeed_tools as cft
 import os
-import logging
 
-# Configure logging to see debug messages
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 
 def main():
     # see docker_files/Dockerfile.cryptofeed where we set IS_DOCKER=True
@@ -31,11 +25,23 @@ def main():
     # f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     # f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     # f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    # f.add_feed(HyperLiquid(
+    #     subscription={
+    #         L2_BOOK: cft.SYMBOLS_HYPERLIQUID
+    #     },
+    #     callbacks=callbacks))
+    
+        # f.add_feed(HyperLiquid(
+
+        #         channels=[L2_BOOK],
+
+        #         symbols=cft.SYMBOLS_HYPERLIQUID,
+
+        #         callbacks=callbacks))
     f.add_feed(HyperLiquid(
-        subscription={
-            L2_BOOK: cft.SYMBOLS_HYPERLIQUID
-        },
-        callbacks=callbacks))
+            subscription={L2_BOOK: cft.SYMBOLS_HYPERLIQUID},
+            callbacks={L2_BOOK: [ch_book_kafka, cft.my_print]}
+    ))        
     f.run()
 
 

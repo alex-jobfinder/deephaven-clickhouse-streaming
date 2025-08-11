@@ -1,4 +1,4 @@
-# !hyperliquid_fixed.py
+# !hyperliquid.py
 from cryptofeed.symbols import Symbol
 from cryptofeed.util.time import timedelta_str_to_sec
 import logging
@@ -30,6 +30,12 @@ class HyperLiquid(Feed):
         CANDLES: 'candle'
     }
     symbol_endpoint = 'https://api.hyperliquid.xyz/info'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Set default max_depth if not provided
+        if not hasattr(self, 'max_depth'):
+            self.max_depth = 1000
 
     @classmethod
     def timestamp_normalize(cls, ts: float | int) -> Decimal:
@@ -90,12 +96,10 @@ class HyperLiquid(Feed):
 
     async def subscribe(self, conn: AsyncConnection):
         self.__reset()
-        LOG.info(f"HyperLiquid: Starting subscription for channels: {list(self.websocket_channels.keys())}")
-        
         for chan in self.websocket_channels:
             for pair in self.subscription.get(chan, []):
                 symbol = self.std_symbol_to_exchange_symbol(pair)
-                LOG.info(f"HyperLiquid subscribe: channel={chan}, std_symbol={pair}, exchange_symbol={symbol}")
+                LOG.debug(f"HyperLiquid subscribe: channel={chan}, std_symbol={pair}, exchange_symbol={symbol}")
 
                 if chan == CANDLES:
                     for interval in self.subscription_interval[chan][pair]:
@@ -107,7 +111,7 @@ class HyperLiquid(Feed):
                                 "interval": interval
                             }
                         }
-                        LOG.info(f"Sending candle subscribe message: {sub_msg}")
+                        LOG.debug(f"Sending candle subscribe message: {sub_msg}")
                         await conn.write(json.dumps(sub_msg))
                 else:
                     sub_msg = {
@@ -117,9 +121,9 @@ class HyperLiquid(Feed):
                             "coin": symbol
                         }
                     }
-                    LOG.info(f"Sending subscribe message: {sub_msg}")
+                    LOG.debug(f"Sending subscribe message: {sub_msg}")
                     await conn.write(json.dumps(sub_msg))
-                    await conn.write(json.dumps(sub_msg))  # Send twice for reliability
+                    # Removed duplicate message sending - was causing issues
                     
         LOG.info("HyperLiquid: Subscription messages sent")
 
@@ -274,7 +278,8 @@ class HyperLiquid(Feed):
         LOG.debug(f"HyperLiquid: OrderBook object keys: {list(book.__dict__.keys()) if hasattr(book, '__dict__') else 'No __dict__'}")
         LOG.debug(f"HyperLiquid: OrderBook.book structure: {book.book if hasattr(book, 'book') else 'No book attribute'}")
         
-        await self.book_callback(L2_BOOK, book, timestamp)
+        # Fix: Use standard callback method instead of book_callback
+        await self.callback(L2_BOOK, book, timestamp)
         LOG.info(f"HyperLiquid: L2_BOOK callback executed for {std_symbol}")
 
     async def message_handler(self, msg: str, conn, timestamp: float):
