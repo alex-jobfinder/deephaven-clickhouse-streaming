@@ -97,17 +97,21 @@ class HyperLiquid(Feed):
 
     async def subscribe(self, conn: AsyncConnection):
         self.__reset()
-        for chan in self.websocket_channels:
-            for pair in self.subscription.get(chan, []):
+        # Iterate actual subscription keys provided by the FeedHandler
+        for chan in self.subscription:
+            pairs = self.subscription.get(chan, [])
+            # Map standard channel to exchange channel if needed
+            exch_chan = self.websocket_channels.get(chan, chan)
+            for pair in pairs:
                 symbol = self.std_symbol_to_exchange_symbol(pair)
-                LOG.debug(f"HyperLiquid subscribe: channel={chan}, std_symbol={pair}, exchange_symbol={symbol}")
+                LOG.debug(f"HyperLiquid subscribe: channel={chan} ({exch_chan}), std_symbol={pair}, exchange_symbol={symbol}")
 
-                if chan == CANDLES:
+                if chan == CANDLES or exch_chan == self.websocket_channels.get(CANDLES):
                     for interval in self.subscription_interval[chan][pair]:
                         sub_msg = {
                             "method": "subscribe",
                             "subscription": {
-                                "type": self.websocket_channels[chan],
+                                "type": exch_chan,
                                 "coin": symbol,
                                 "interval": interval
                             }
@@ -118,7 +122,7 @@ class HyperLiquid(Feed):
                     sub_msg = {
                         "method": "subscribe",
                         "subscription": {
-                            "type": self.websocket_channels[chan],
+                            "type": exch_chan,
                             "coin": symbol
                         }
                     }
@@ -199,9 +203,9 @@ class HyperLiquid(Feed):
             asks = {Decimal(level["px"]): Decimal(level["sz"]) for level in asks_raw}
 
             ob = self._l2_book[pair]
-            # Populate using standard cryptofeed OrderBook attributes
-            ob.book.bids = bids
-            ob.book.asks = asks
+            # Populate using BID/ASK keys per cryptofeed convention
+            ob.book[BID] = bids
+            ob.book[ASK] = asks
             ob.timestamp = self.timestamp_normalize(time_ms)
             ob.raw = msg
 
