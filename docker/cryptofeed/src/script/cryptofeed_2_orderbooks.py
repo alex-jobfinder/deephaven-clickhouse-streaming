@@ -4,7 +4,13 @@ from cryptofeed.exchanges import Coinbase, Kraken, Bitstamp, HyperLiquid
 
 import src.cryptofeed_tools as cft
 import os
+import logging
 
+# Configure logging to see debug messages
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 def main():
     # see docker_files/Dockerfile.cryptofeed where we set IS_DOCKER=True
@@ -13,15 +19,16 @@ def main():
     kakfa_bootstrap = 'redpanda' if os.environ.get('IS_DOCKER') else 'localhost'
     kakfa_port = 29092 if os.environ.get('IS_DOCKER') else 9092
 
-    ch_book_kafka = cft.ClickHouseBookKafka(bootstrap_servers=kakfa_bootstrap, port=kakfa_port,
-                                            snapshot_interval=25000, snapshots_only=True)
+    # ch_book_kafka = cft.ClickHouseBookKafka(bootstrap=kakfa_bootstrap, port=kakfa_port,
+    #                                         snapshot_interval=25000, snapshots_only=True)
+    ch_book_kafka = cft.ClickHouseBookKafka(bootstrap=kakfa_bootstrap, port=kakfa_port)
 
     callbacks = {L2_BOOK: [ch_book_kafka, cft.my_print]}
 
     # cft.SYMBOLS = ['BTC-USD']   # for testing
 
     f = FeedHandler()
-    f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    # f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     # f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     # f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
     f.add_feed(HyperLiquid(

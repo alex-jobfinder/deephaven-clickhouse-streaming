@@ -1,227 +1,94 @@
 import asyncio
-import logging
-import sys
-from collections import OrderedDict, defaultdict
-from typing import Optional, ByteString
-from datetime import datetime
+from collections import OrderedDict
 
 import orjson
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import RequestTimedOutError, KafkaConnectionError, NodeNotReadyError
 
-# Enhanced logging setup
-def setup_logging(service_name: str, log_level: str = "INFO"):
-    """Setup logging for the service"""
-    import os
-    
-    # Create logs directory if it doesn't exist
-    log_dir = '/cryptofeed/logs'
-    os.makedirs(log_dir, exist_ok=True)
-    
-    # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Create handlers
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    
-    # File handler for errors
-    error_handler = logging.FileHandler(f'{log_dir}/{service_name}_errors.log')
-    error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter(formatter)
-    
-    # File handler for all logs
-    file_handler = logging.FileHandler(f'{log_dir}/{service_name}_all.log')
-    file_handler.setFormatter(formatter)
-    
-    # Setup logger
-    logger = logging.getLogger(service_name)
-    logger.setLevel(getattr(logging, log_level.upper()))
-    logger.addHandler(console_handler)
-    logger.addHandler(error_handler)
-    logger.addHandler(file_handler)
-    
-    return logger
-
-# Initialize logger
-logger = setup_logging('cryptofeed_tools')
-
-# Import the backend classes from cryptofeed
-try:
-    from cryptofeed.backends.backend import BackendBookCallback, BackendCallback, BackendQueue
-except ImportError:
-    # Fallback if cryptofeed backend classes aren't available
-    class BackendQueue:
-        def __init__(self):
-            pass
-    
-    class BackendCallback:
-        def __init__(self):
-            pass
-    
-    class BackendBookCallback:
-        def __init__(self):
-            pass
-
-LOG = logging.getLogger('feedhandler')
-
+SYMBOLS = ['BTC-USD', 'ETH-USD', 'AVAX-USD', 'SOL-USD']
+SYMBOLS_HYPERLIQUID = ["ADA", "APT", "ATOM", "AVAX", "BNB", "BTC", "DOGE", "DOT", "ETH", "FARTCOIN", "HYPE", "NEAR", "SOL", "SUI", "TIA", "XRP"]
 SYMBOLS = ['BTC-USD']
 SYMBOLS_HYPERLIQUID = ["BTC"]
 
 async def my_print(data, _receipt_time):
     print(data)
 
-class KafkaCallback(BackendQueue):
-    def __init__(self, key=None, numeric_type=float, none_to=None, **kwargs):
+
+class KafkaCallback:
+    def __init__(self, bootstrap='127.0.0.1', port=9092, topic=None, numeric_type=float, none_to=None,
+                 **kwargs):  # working locally
         """
-        You can pass configuration options to AIOKafkaProducer as keyword arguments.
-        (either individual kwargs, an unpacked dictionary `**config_dict`, or both)
-        A full list of configuration parameters can be found at
-        https://aiokafka.readthedocs.io/en/stable/api.html#aiokafka.AIOKafkaProducer
-
-        A 'value_serializer' option allows use of other schemas such as Avro, Protobuf etc.
-        The default serialization is JSON Bytes
-
-        Example:
-
-            **{'bootstrap_servers': '127.0.0.1:9092',
-            'client_id': 'cryptofeed',
-            'acks': 1,
-            'value_serializer': your_serialization_function}
-
-        (Passing the event loop is already handled)
+        bootstrap: str, list
+            if a list, should be a list of strings in the format: ip/host:port, i.e.
+                192.1.1.1:9092
+                192.1.1.2:9092
+                etc
+            if a string, should be ip/port only
         """
-        self.producer_config = kwargs
+        self.bootstrap = bootstrap
+        self.port = port
         self.producer = None
-        self.key: str = key or self.default_key
+        self.topic = topic if topic else self.default_topic
         self.numeric_type = numeric_type
         self.none_to = none_to
-        # Do not allow writer to send messages until connection confirmed
-        self.running = False
-        self.logger = logging.getLogger(f'{self.__class__.__name__}')
-        
-        # Log initialization
-        self.logger.info(f"Initializing {self.__class__.__name__} with key: {self.key}")
-        self.logger.debug(f"Producer config: {self.producer_config}")
 
-    def _default_serializer(self, to_bytes: dict | str) -> ByteString:
-        if isinstance(to_bytes, dict):
-            return orjson.dumps(to_bytes)
-        elif isinstance(to_bytes, str):
-            return to_bytes.encode()
+    async def __call__(self, dtype, receipt_timestamp: float):
+        print(f"DEBUG: KafkaCallback.__call__ received dtype type: {type(dtype)}")
+        if isinstance(dtype, dict):
+            data = dtype
+            print(f"DEBUG: Data is dict with keys: {list(data.keys())}")
         else:
-            raise TypeError(f'{type(to_bytes)} is not a valid Serialization type')
+            print(f"DEBUG: Converting dtype to dict, dtype type: {type(dtype)}")
+            data = dtype.to_dict(numeric_type=self.numeric_type, none_to=self.none_to)
+            if not dtype.timestamp:
+                data['timestamp'] = receipt_timestamp
+            data['receipt_timestamp'] = receipt_timestamp
+            print(f"DEBUG: Converted data keys: {list(data.keys())}")
+        await self.write(data)
 
-    async def _connect(self):
+    async def __connect(self):
         if not self.producer:
             loop = asyncio.get_event_loop()
-            try:
-                config_keys = ', '.join([k for k in self.producer_config.keys()])
-                self.logger.info(f'Configuring AIOKafka with parameters: {config_keys}')
-                self.producer = AIOKafkaProducer(**self.producer_config, loop=loop)
-            # Quit if invalid config option passed to AIOKafka
-            except (TypeError, ValueError) as e:
-                self.logger.error(f'Invalid AIOKafka configuration: {e.args}')
-                raise SystemExit
-            else:
-                while not self.running:
-                    try:
-                        await self.producer.start()
-                    except KafkaConnectionError:
-                        self.logger.error(f'Unable to bootstrap from host(s) - retrying in 10s')
-                        await asyncio.sleep(10)
-                    else:
-                        self.logger.info(f'Connected to cluster with {len(self.producer.client.cluster.brokers())} broker(s)')
-                        self.running = True
+            self.producer = AIOKafkaProducer(acks=0,
+                                             loop=loop,
+                                             bootstrap_servers=f'{self.bootstrap}:{self.port}' if isinstance(self.bootstrap, str) else self.bootstrap,
+                                             client_id='cryptofeed')
+            await self.producer.start()
 
-    def topic(self, data: dict) -> str:
-        return f"{self.key}-{data['exchange']}-{data['symbol']}"
+    async def write(self, data: dict):
+        await self.__connect()
+        await self.producer.send_and_wait(self.topic, orjson.dumps(data).encode('utf-8'))
 
-    def partition_key(self, data: dict) -> Optional[bytes]:
-        return None
 
-    def partition(self, data: dict) -> Optional[int]:
-        return None
-
-    async def writer(self):
-        await self._connect()
-        while self.running:
-            async with self.read_queue() as updates:
-                for index in range(len(updates)):
-                    topic = self.topic(updates[index])
-                    # Check for user-provided serializers, otherwise use default
-                    value = updates[index] if self.producer_config.get('value_serializer') else self._default_serializer(updates[index])
-                    key = self.key if self.producer_config.get('key_serializer') else self._default_serializer(self.key)
-                    partition = self.partition(updates[index])
-                    
-                    try:
-                        send_future = await self.producer.send(topic, value, key, partition)
-                        await send_future
-                        self.logger.debug(f'Message sent to topic: {topic}')
-                    except RequestTimedOutError:
-                        self.logger.error(f'No response received from server within {self.producer._request_timeout_ms} ms')
-                    except NodeNotReadyError:
-                        self.logger.error(f'Node not ready')
-                    except Exception as e:
-                        self.logger.error(f'Encountered an error: {e}', exc_info=True)
-        
-        self.logger.info(f"Sending last messages and closing connection")
-        await self.producer.stop()
-
-class ClickHouseTradeKafka(KafkaCallback, BackendCallback):
-    default_key = 'trades'
+class ClickHouseTradeKafka(KafkaCallback):
     default_topic = 'trades'
 
     async def write(self, data: dict):
+        await self._KafkaCallback__connect()
         try:
-            await self._connect()
-            
-            # Log incoming data
-            self.logger.debug(f"Processing trade data: {data.get('symbol', 'unknown')} from {data.get('exchange', 'unknown')}")
-            
             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
             data['size'] = data.pop('amount')
             data['trade_id'] = data.pop('id')
             del data['type']
-            
-            # Create key for Kafka message
-            if 'exchange' in data and 'symbol' in data:
-                kafka_key = f"{data['exchange']}_{data['symbol']}".encode('utf-8')
-            else:
-                kafka_key = None
-                self.logger.warning(f"Missing exchange or symbol for Kafka key: {data.get('exchange', 'unknown')}, {data.get('symbol', 'unknown')}")
-            
-            # Send with key
-            await self.producer.send_and_wait(self.default_topic, orjson.dumps(data), key=kafka_key)
-            self.logger.debug(f"Trade sent to Kafka: {data.get('symbol')} from {data.get('exchange')}")
-            
-        except Exception as e:
-            self.logger.error(f"ClickHouseTradeKafka.write() failed: {e}", exc_info=True)
-            self.logger.error(f"Data keys: {list(data.keys()) if data else 'None'}")
-            # Re-raise to ensure the error is not silently ignored
-            raise
+            await self.producer.send_and_wait(self.topic, orjson.dumps(data))  # orjson uses UTF-8 encoding by default
+        except:
+            print("WARNING: ClickHouseTradeKafka.write() didn't fire - go check!")
+            pass
 
-class ClickHouseBookKafka(KafkaCallback, BackendBookCallback):
-    default_key = 'book'
+
+class ClickHouseBookKafka(KafkaCallback):
     default_topic = 'orderbooks'
 
-    def __init__(self, *args, snapshots_only=False, snapshot_interval=1000, **kwargs):
-        self.snapshots_only = snapshots_only
-        self.snapshot_interval = snapshot_interval
-        self.snapshot_count = defaultdict(int)
-        super().__init__(*args, **kwargs)
-        self.logger.info(f"Initialized BookKafka: snapshots_only={snapshots_only}, interval={snapshot_interval}")
-
     async def write(self, data: dict):
+        await self._KafkaCallback__connect()
         try:
-            await self._connect()
-            
-            # Log incoming data
-            self.logger.debug(f"Processing orderbook data: {data.get('symbol', 'unknown')} from {data.get('exchange', 'unknown')}")
+            print(f"DEBUG: ClickHouseBookKafka.write() received data keys: {list(data.keys())}")
+            if 'book' in data:
+                print(f"DEBUG: Book structure - book keys: {list(data['book'].keys()) if isinstance(data['book'], dict) else 'Not a dict'}")
+                if 'bid' in data['book']:
+                    print(f"DEBUG: Bid structure - first few items: {list(data['book']['bid'].items())[:3]}")
+                if 'ask' in data['book']:
+                    print(f"DEBUG: Ask structure - first few items: {list(data['book']['ask'].items())[:3]}")
             
             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
@@ -229,63 +96,232 @@ class ClickHouseBookKafka(KafkaCallback, BackendBookCallback):
             data['ask'] = OrderedDict(sorted(data['book'].pop('ask').items()))
             del data['book']
             del data['delta']
-            
-            # Create key for Kafka message
-            if 'exchange' in data and 'symbol' in data:
-                kafka_key = f"{data['exchange']}_{data['symbol']}".encode('utf-8')
-            else:
-                kafka_key = None
-                self.logger.warning(f"Missing exchange or symbol for Kafka key: {data.get('exchange', 'unknown')}, {data.get('symbol', 'unknown')}")
-            
-            # Ensure exchange field is preserved
-            if 'exchange' not in data:
-                self.logger.warning(f"Missing exchange field in orderbook data: {data.get('symbol', 'unknown')}")
-            
-            # Send with key
-            await self.producer.send_and_wait(self.default_topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS), key=kafka_key)
-            self.logger.debug(f"Orderbook sent to Kafka: {data.get('symbol')} from {data.get('exchange')} - Bids: {len(data['bid'])}, Asks: {len(data['ask'])}")
-            
+            await self.producer.send_and_wait(self.topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS))  # orjson uses UTF-8 encoding by default
         except Exception as e:
-            self.logger.error(f"ClickHouseBookKafka.write() failed: {e}", exc_info=True)
-            self.logger.error(f"Data keys: {list(data.keys()) if data else 'None'}")
-            raise
+            print(f"WARNING: ClickHouseBookKafka.write() failed with error: {e}")
+            print(f"DEBUG: Data that caused failure: {data}")
+            pass
+        
 
-# Additional Kafka callback classes for future use
-class TradeKafka(KafkaCallback, BackendCallback):
-    default_key = 'trades'
 
-class FundingKafka(KafkaCallback, BackendCallback):
-    default_key = 'funding'
+# import asyncio
+# from collections import OrderedDict
 
-class BookKafka(KafkaCallback, BackendBookCallback):
-    default_key = 'book'
+# import orjson
+# from aiokafka import AIOKafkaProducer
 
-    def __init__(self, *args, snapshots_only=False, snapshot_interval=1000, **kwargs):
-        self.snapshots_only = snapshots_only
-        self.snapshot_interval = snapshot_interval
-        self.snapshot_count = defaultdict(int)
-        super().__init__(*args, **kwargs)
+# SYMBOLS = ['BTC-USD', 'ETH-USD', 'AVAX-USD', 'SOL-USD']
+# SYMBOLS_HYPERLIQUID = ["ADA", "APT", "ATOM", "AVAX", "BNB", "BTC", "DOGE", "DOT", "ETH", "FARTCOIN", "HYPE", "NEAR", "SOL", "SUI", "TIA", "XRP"]
 
-class TickerKafka(KafkaCallback, BackendCallback):
-    default_key = 'ticker'
+# async def my_print(data, _receipt_time):
+#     print(data)
 
-class OpenInterestKafka(KafkaCallback, BackendCallback):
-    default_key = 'open_interest'
 
-class LiquidationsKafka(KafkaCallback, BackendCallback):
-    default_key = 'liquidations'
+# class KafkaCallback:
+#     def __init__(self, bootstrap='127.0.0.1', port=9092, topic=None, numeric_type=float, none_to=None,
+#                  **kwargs):  # working locally
+#         """
+#         bootstrap: str, list
+#             if a list, should be a list of strings in the format: ip/host:port, i.e.
+#                 192.1.1.1:9092
+#                 192.1.1.2:9092
+#                 etc
+#             if a string, should be ip/port only
+#         """
+#         self.bootstrap = bootstrap
+#         self.port = port
+#         self.producer = None
+#         self.topic = topic if topic else self.default_topic
+#         self.numeric_type = numeric_type
+#         self.none_to = none_to
 
-class CandlesKafka(KafkaCallback, BackendCallback):
-    default_key = 'candles'
+#     async def __call__(self, dtype, receipt_timestamp: float):
+#         print(f"KafkaCallback.__call__ received dtype: {type(dtype)}, receipt_timestamp: {receipt_timestamp}")
+#         if isinstance(dtype, dict):
+#             data = dtype
+#             print(f"KafkaCallback.__call__ data is dict with keys: {list(data.keys())}")
+#         else:
+#             data = dtype.to_dict(numeric_type=self.numeric_type, none_to=self.none_to)
+#             if not dtype.timestamp:
+#                 data['timestamp'] = receipt_timestamp
+#             data['receipt_timestamp'] = receipt_timestamp
+#             print(f"KafkaCallback.__call__ converted data keys: {list(data.keys())}")
+#         await self.write(data)
 
-class OrderInfoKafka(KafkaCallback, BackendCallback):
-    default_key = 'order_info'
+#     async def __connect(self):
+#         if not self.producer:
+#             loop = asyncio.get_event_loop()
+#             self.producer = AIOKafkaProducer(acks=0,
+#                                              loop=loop,
+#                                              bootstrap_servers=f'{self.bootstrap}:{self.port}' if isinstance(self.bootstrap, str) else self.bootstrap,
+#                                              client_id='cryptofeed')
+#             await self.producer.start()
 
-class TransactionsKafka(KafkaCallback, BackendCallback):
-    default_key = 'transactions'
+#     async def write(self, data: dict):
+#         await self.__connect()
+#         await self.producer.send_and_wait(self.topic, orjson.dumps(data).encode('utf-8'))
 
-class BalancesKafka(KafkaCallback, BackendCallback):
-    default_key = 'balances'
 
-class FillsKafka(KafkaCallback, BackendCallback):
-    default_key = 'fills'
+# class ClickHouseTradeKafka(KafkaCallback):
+#     default_topic = 'trades'
+
+#     async def write(self, data: dict):
+#         await self._KafkaCallback__connect()  # This is correct
+#         try:
+#             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
+#             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
+#             data['size'] = data.pop('amount')
+#             data['trade_id'] = data.pop('id')
+#             del data['type']
+            
+#             # ✅ REQUIRED: Create key for Kafka message (exchange_symbol)
+#             if 'exchange' in data and 'symbol' in data:
+#                 kafka_key = f"{data['exchange']}_{data['symbol']}".encode('utf-8')
+#             else:
+#                 kafka_key = None
+#                 print(f"WARNING: Missing exchange or symbol for Kafka key: {data.get('exchange', 'unknown')}, {data.get('symbol', 'unknown')}")
+            
+#             # ✅ Send with key
+#             await self.producer.send_and_wait(self.topic, orjson.dumps(data), key=kafka_key)
+#         except Exception as e:  # Better error handling
+#             print(f"WARNING: ClickHouseTradeKafka.write() failed: {e}")
+#             print(f"Data keys: {list(data.keys()) if data else 'None'}")
+#             pass
+
+
+# class ClickHouseBookKafka(KafkaCallback):
+#     default_topic = 'orderbooks'
+
+#     async def __call__(self, data, receipt_time):
+#         """Make the object callable for cryptofeed"""
+#         print(f"ClickHouseBookKafka.__call__ received data type: {type(data)}")
+#         if hasattr(data, 'to_dict'):
+#             print(f"ClickHouseBookKafka.__call__ data keys: {list(data.to_dict().keys())}")
+#             # Test the to_dict method
+#             try:
+#                 test_dict = data.to_dict()
+#                 print(f"ClickHouseBookKafka.__call__ to_dict() successful, keys: {list(test_dict.keys())}")
+#             except Exception as e:
+#                 print(f"ClickHouseBookKafka.__call__ to_dict() failed: {e}")
+#         elif hasattr(data, '__dict__'):
+#             print(f"ClickHouseBookKafka.__call__ data keys: {list(data.__dict__.keys())}")
+#         else:
+#             print(f"ClickHouseBookKafka.__call__ data: {data}")
+#         await self.write(data)
+
+#     async def write(self, data: dict):
+#         await self._KafkaCallback__connect()  # This is correct
+#         try:
+#             print(f"ClickHouseBookKafka.write processing data with keys: {list(data.keys())}")
+            
+#             # Check if required fields exist
+#             if 'timestamp' not in data:
+#                 print(f"ERROR: Missing 'timestamp' field in data: {data}")
+#                 return
+#             if 'receipt_timestamp' not in data:
+#                 print(f"ERROR: Missing 'receipt_timestamp' field in data: {data}")
+#                 return
+#             if 'book' not in data:
+#                 print(f"ERROR: Missing 'book' field in data: {data}")
+#                 return
+#             if 'bid' not in data['book'] or 'ask' not in data['book']:
+#                 print(f"ERROR: Missing 'bid' or 'ask' in book data: {data['book']}")
+#                 return
+            
+#             data['ts'] = int(data.pop('timestamp') * 1_000_000_000)
+#             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
+#             data['bid'] = OrderedDict(sorted(data['book'].pop('bid').items(), reverse=True))
+#             data['ask'] = OrderedDict(sorted(data['book'].pop('ask').items()))
+#             del data['book']
+#             del data['delta']
+            
+#             print(f"ClickHouseBookKafka.write processed data keys: {list(data.keys())}")
+            
+#             # ✅ REQUIRED: Create key for Kafka message (exchange_symbol)
+#             if 'exchange' in data and 'symbol' in data:
+#                 kafka_key = f"{data['exchange']}_{data['symbol']}".encode('utf-8')
+#             else:
+#                 kafka_key = None
+#                 print(f"WARNING: Missing exchange or symbol for Kafka key: {data.get('exchange', 'unknown')}, {data.get('symbol', 'unknown')}")
+            
+#             # ✅ Send with key
+#             await self.producer.send_and_wait(self.topic, orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS), key=kafka_key)
+#             print(f"ClickHouseBookKafka.write successfully sent data to Kafka for {data.get('symbol', 'unknown')}")
+#         except Exception as e:  # Better error handling
+#             print(f"WARNING: ClickHouseBookKafka.write() failed: {e}")
+#             print(f"Data keys: {list(data.keys()) if data else 'None'}")
+#             import traceback
+#             traceback.print_exc()
+#             pass
+        
+        
+
+# class ClickHousePositionsKafka(KafkaCallback):
+#     default_topic = 'hyperliquid_positions'
+
+#     async def write(self, data: dict):
+#         await self._KafkaCallback__connect()
+#         try:
+#             # Map the data to match the expected JSON format
+#             formatted_data = {
+#                 'user_id': data.get('user', ''),
+#                 'timestamp': data.get('timestamp', ''),
+#                 'time': int(data.get('ts', 0) / 1_000_000_000) if data.get('ts') else 0,
+#                 'coin': data.get('coin', ''),
+#                 'szi': str(data.get('szi', 0)),
+#                 'leverage_type': data.get('leverage_type', 'cross'),
+#                 'leverage_value': float(data.get('leverage', 0)),
+#                 'entry_px': str(data.get('entry_px', 0)),
+#                 'position_value': str(data.get('position_value', 0)),
+#                 'unrealized_pnl': str(data.get('unrealized_pnl', 0)),
+#                 'return_on_equity': str(data.get('return_on_equity', 0)),
+#                 'liquidation_px': str(data.get('liquidation_px', 0)),
+#                 'margin_used': str(data.get('margin_used', 0)),
+#                 'max_leverage': float(data.get('max_leverage', 0)),
+#                 'funding_all_time': str(data.get('funding_all_time', 0)),
+#                 'funding_since_open': str(data.get('funding_since_open', 0)),
+#                 'funding_since_change': str(data.get('funding_since_change', 0))
+#             }
+
+#             await self.producer.send_and_wait(
+#                 self.topic,
+#                 orjson.dumps(formatted_data).encode('utf-8')
+#             )
+#         except Exception as e:
+#             print(f"WARNING: ClickHousePositionsKafka.write() failed: {e}")
+#             print(f"Data: {data}")
+
+
+# class ClickHouseFillsKafka(KafkaCallback):
+#     default_topic = 'fills'
+
+#     async def write(self, data: dict):
+#         await self._KafkaCallback__connect()
+#         try:
+#             data['ts'] = int(data.pop('time') * 1_000_000_000)
+#             data['receipt_ts'] = int(data.pop('receipt_timestamp') * 1_000_000_000)
+#             data['order_id'] = str(data.pop('oid'))
+#             data['fill_id'] = data.pop('hash')
+#             data['price'] = float(data.pop('px'))
+#             data['size'] = float(data.pop('sz'))
+#             data['start_position'] = float(data.pop('startPosition', 0))
+#             data['pnl'] = float(data.pop('closedPnl', 0))
+#             data['crossed'] = bool(data.pop('crossed', False))
+#             data['direction'] = data.pop('dir', '')
+#             data['side'] = 'buy' if data.pop('side') == 'B' else 'sell'
+#             data['coin'] = data.pop('coin')
+
+#             # Optional liquidation data
+#             liquidation = data.pop('liquidation', None)
+#             if liquidation:
+#                 data['liquidated_user'] = liquidation.get('liquidatedUser')
+#                 data['mark_price'] = float(liquidation.get('markPx', 0))
+#                 data['liquidation_method'] = liquidation.get('method')
+
+#             await self.producer.send_and_wait(
+#                 self.topic,
+#                 orjson.dumps(data).encode('utf-8')
+#             )
+#         except Exception as e:
+#             print(f"WARNING: ClickHouseFillsKafka.write() failed: {e}")
+

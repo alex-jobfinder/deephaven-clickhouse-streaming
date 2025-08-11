@@ -13,12 +13,12 @@ def main():
     kakfa_bootstrap = 'redpanda' if os.environ.get('IS_DOCKER') else 'localhost'
     kakfa_port = 29092 if os.environ.get('IS_DOCKER') else 9092
 
-    ch_tradekafka = cft.ClickHouseTradeKafka(bootstrap_servers=kakfa_bootstrap, port=kakfa_port)
+    ch_tradekafka = cft.ClickHouseTradeKafka(bootstrap=kakfa_bootstrap, port=kakfa_port)
 
     # cft.SYMBOLS = ['BTC-USD']   # for testing
 
     f = FeedHandler()
-    f.add_feed(Coinbase(channels=[TRADES], symbols=cft.SYMBOLS, callbacks={TRADES: [ch_tradekafka, cft.my_print]}))
+    # f.add_feed(Coinbase(channels=[TRADES], symbols=cft.SYMBOLS, callbacks={TRADES: [ch_tradekafka, cft.my_print]}))
     # f.add_feed(Bitstamp(channels=[TRADES], symbols=cft.SYMBOLS, callbacks={TRADES: [ch_tradekafka, cft.my_print]}))
     # f.add_feed(Kraken(channels=[TRADES], symbols=cft.SYMBOLS, callbacks={TRADES: [ch_tradekafka, cft.my_print]}))
     f.add_feed(HyperLiquid(
