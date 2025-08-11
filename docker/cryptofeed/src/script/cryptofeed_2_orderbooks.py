@@ -16,19 +16,23 @@ def main():
     ch_book_kafka = cft.ClickHouseBookKafka(bootstrap=kakfa_bootstrap, port=kakfa_port,
                                             snapshot_interval=25000, snapshots_only=True)
 
-    callbacks = {L2_BOOK: [ch_book_kafka, cft.my_print]}
+    # callbacks = {L2_BOOK: [ch_book_kafka, cft.my_print]}
 
     # cft.SYMBOLS = ['BTC-USD']   # for testing
 
     f = FeedHandler()
-    f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
-    f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
-    f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    # f.add_feed(Coinbase(max_depth=2000, channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    # f.add_feed(Bitstamp(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+    # f.add_feed(Kraken(channels=[L2_BOOK], symbols=cft.SYMBOLS, callbacks=callbacks))
+  
     f.add_feed(HyperLiquid(
         subscription={
             L2_BOOK: cft.SYMBOLS_HYPERLIQUID
         },
-        callbacks=callbacks))    
+        callbacks={
+            # Inbound OB debug first, then Kafka, then simple print
+            L2_BOOK: [cft.print_orderbook_in, ch_book_kafka, cft.my_print]
+        }))    
     f.run()
 
 

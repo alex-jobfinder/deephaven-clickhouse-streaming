@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Start the first process
-python /cryptofeed/src/script/cryptofeed_1_trades.py &
+# python /cryptofeed/src/script/cryptofeed_1_trades.py &
 
 # Start the second process
 python /cryptofeed/src/script/cryptofeed_2_orderbooks.py &

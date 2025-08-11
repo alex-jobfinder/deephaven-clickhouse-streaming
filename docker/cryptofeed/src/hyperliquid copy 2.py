@@ -119,6 +119,73 @@ class HyperLiquid(Feed):
                     await conn.write(json.dumps(sub_msg))
 
 
+    async def _handle_l2_book(self, msg: dict, timestamp: float):
+        """Handle L2 book (order book) messages from HyperLiquid"""
+        try:
+            data = msg.get("data", {})
+            
+            # Skip if this is just a subscription acknowledgment snapshot
+            if data.get("isSnapshot"):
+                LOG.debug(f"HyperLiquid: Skipping subscription snapshot for {data.get('coin', 'unknown')}")
+                return
+            coin = data.get("coin")
+            
+            if not coin:
+                LOG.warning(f"HyperLiquid: L2 book message missing coin: {msg}")
+                return
+                
+            std_symbol = self.exchange_symbol_to_std_symbol(coin)
+            
+            # Get the levels data - it's a list with [bids, asks]
+            levels = data.get("levels", [])
+            
+            if len(levels) != 2:
+                LOG.warning(f"HyperLiquid: Unexpected levels format for {coin}: {levels}")
+                return
+                
+            bids_data, asks_data = levels[0], levels[1]
+            
+            # Initialize order book if it doesn't exist
+            if std_symbol not in self._l2_book:
+                self._l2_book[std_symbol] = OrderBook(self.id, std_symbol)
+                
+            ob = self._l2_book[std_symbol]
+            
+            # Clear the book (HyperLiquid sends full snapshots)
+            ob.book.bids.clear()
+            ob.book.asks.clear()
+            
+            # Process bids
+            for level in bids_data:
+                price = Decimal(level["px"])
+                size = Decimal(level["sz"])
+                if size > 0:  # Only add non-zero sizes
+                    ob.book.bids[price] = size
+                    
+            # Process asks  
+            for level in asks_data:
+                price = Decimal(level["px"])
+                size = Decimal(level["sz"])
+                if size > 0:  # Only add non-zero sizes
+                    ob.book.asks[price] = size
+            
+            # Update timestamp from the message
+            book_time = data.get("time", 0)
+            if book_time:
+                ob.timestamp = self.timestamp_normalize(book_time)
+            else:
+                ob.timestamp = timestamp
+                
+            LOG.debug(f"HyperLiquid: Updated L2 book for {std_symbol} - "
+                    f"bids: {len(ob.book.bids)}, asks: {len(ob.book.asks)}")
+            
+            # Send the callback
+            await self.callback(L2_BOOK, ob, timestamp)
+            LOG.debug(f"HyperLiquid: L2_BOOK callback executed for {std_symbol}")
+            
+        except Exception as e:
+            LOG.error(f"HyperLiquid: Error processing L2 book message: {e}", exc_info=True)
+            LOG.error(f"HyperLiquid: Problematic message: {msg}")
 
     async def message_handler(self, msg: str, conn, timestamp: float):
         LOG.debug(f"HyperLiquid raw message received: {msg}")
@@ -173,59 +240,13 @@ class HyperLiquid(Feed):
                 LOG.debug(f"HyperLiquid: TRADES callback executed for {std_symbol}")
 
         elif msg.get("channel") == "l2Book":
-            # Mirror the explicit parsing/logging style used for trades, then delegate
-            data = msg.get("data", {})
-            coin = data.get("coin")
-            book_time = data.get("time", 0)
-            levels = data.get("levels", [])
-
-            if not coin:
-                LOG.warning(f"HyperLiquid: 'l2Book' message missing coin: {msg}")
-            else:
-                std_symbol = self.exchange_symbol_to_std_symbol(coin)
-                LOG.debug(
-                    f"Parsing l2Book: coin={coin} std_symbol={std_symbol} time={book_time} "
-                    f"levels_len={len(levels)}"
-                )
-
-                if isinstance(levels, list) and len(levels) == 2:
-                    bids_data = levels[0] or []
-                    asks_data = levels[1] or []
-                    LOG.debug(
-                        f"l2Book breakdown: bids={len(bids_data)} asks={len(asks_data)} "
-                        f"sample_bid={bids_data[0] if bids_data else None} "
-                        f"sample_ask={asks_data[0] if asks_data else None}"
-                    )
-                else:
-                    LOG.warning(f"HyperLiquid: 'l2Book' levels not in expected [bids, asks] format: {levels}")
-
-            # Continue with the existing normalized handler
             await self._handle_l2_book(msg, timestamp)
         
         else:
             LOG.debug(f"HyperLiquid: Unhandled message type {msg.get('channel')}: {msg}")
 
 """
-interface WsTrade {
-  coin: string;
-  side: string;
-  px: string;
-  sz: string;
-  hash: string;
-  time: number;
-  // tid is 50-bit hash of (buyer_oid, seller_oid). 
-  // For a globally unique trade id, use (block_time, coin, tid)
-  tid: number;  
-  users: [string, string] // [buyer, seller]
-}
-
-// Snapshot feed, pushed on each block that is at least 0.5 since last push
-interface WsBook {
-  coin: string;
-  levels: [Array<WsLevel>, Array<WsLevel>];
-  time: number;
-}
-
+The subscription ack provides a snapshot of previous data for time series data (e.g. user fills). These snapshot messages are tagged with isSnapshot: true and can be ignored if the previous messages were already processed.
 
 l2Book:
 
@@ -234,22 +255,13 @@ l2Book:
     Optional parameters: nSigFigs: int, mantissa: int
 
     Data format: WsBook
-
-trades:
-
-    Subscription message: { "type": "trades", "coin": "<coin_symbol>" }
-
-    Data format: WsTrade[]
-
-
-Subscribe to order book updates for a specific coin:
-
-{ "method": "subscribe", "subscription": { "type": "l2Book", "coin": "<coin_symbol>" } }
-
-Subscribe to trades for a specific coin:
-
-{ "method": "subscribe", "subscription": { "type": "trades", "coin": "<coin_symbol>" } }
-
+    
+// Snapshot feed, pushed on each block that is at least 0.5 since last push
+interface WsBook {
+  coin: string;
+  levels: [Array<WsLevel>, Array<WsLevel>];
+  time: number;
+}    
 
 
 Connecting to wss://api.hyperliquid.xyz/ws
