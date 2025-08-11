@@ -5,8 +5,9 @@ services:
     command:
       - redpanda
       - start
-      - --smp 1
-      - --memory 1G
+      - --smp 4
+      - --memory 4G
+      - --reserve-memory 4G
 # this is no longer needed as we provide the configurations via ./docker/redpanda/redpanda.yaml
 #      - --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092
 #      - --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092
@@ -27,7 +28,7 @@ services:
 
   console:
     container_name: redpanda-console
-    image: docker.redpanda.com/vectorized/console:v2.4.3
+    image: docker.redpanda.com/redpandadata/console:v2.4.3
     networks:
       - ch_ntw
     entrypoint: /bin/sh
@@ -42,7 +43,7 @@ services:
             enabled: true
             urls: ["http://redpanda:9644"]
     ports:
-      - 8080:8080
+      - 8081:8080
     depends_on:
       - redpanda
 
@@ -72,6 +73,9 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: password
       CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: true
+      CLICKHOUSE_LOG_LEVEL: INFORMATION
+      # Add these for better performance
+      # CLICKHOUSE_CONFIG: /etc/clickhouse-server/config.xml
     ports:
       - "8123:8123"
     volumes:
